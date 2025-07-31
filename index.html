@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>দেশ ও নাম্বার ম্যানেজমেন্ট সিস্টেম</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
         :root {
             --primary: #3498db;
@@ -346,36 +349,54 @@
     </div>
 
     <script>
-        // লোকাল স্টোরেজ থেকে ডেটা লোড
-        function loadData() {
-            return {
-                countries: JSON.parse(localStorage.getItem('countries')) || [],
-                numbers: JSON.parse(localStorage.getItem('numbers')) || {}
-            };
-        }
+        // --- আপনার দেওয়া ফায়ারবেজ কনফিগারেশন ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBS4o60EuxGLEXi8M-tqNJAiMCJ5qVi1tY",
+            authDomain: "free-number-dafbd.firebaseapp.com",
+            databaseURL: "https://free-number-dafbd-default-rtdb.firebaseio.com", // এটি যোগ করা হয়েছে
+            projectId: "free-number-dafbd",
+            storageBucket: "free-number-dafbd.appspot.com",
+            messagingSenderId: "76794112710",
+            appId: "1:76794112710:web:e6e52578352d977d6a05c7",
+            measurementId: "G-WLJNJKLQDP"
+        };
+        
+        // ফায়ারবেজ শুরু করুন
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        let appData = { countries: {}, numbers: {} };
 
-        // ডেটা সেভ করুন
-        function saveData(data) {
-            localStorage.setItem('countries', JSON.stringify(data.countries));
-            localStorage.setItem('numbers', JSON.stringify(data.numbers));
+        // ফায়ারবেজ থেকে ডেটা লোড করুন এবং পরিবর্তনে UI আপডেট করুন
+        function initializeData() {
+            database.ref().on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    appData.countries = data.countries || {};
+                    appData.numbers = data.numbers || {};
+                } else {
+                    appData = { countries: {}, numbers: {} };
+                }
+                displayCountries();
+                updateCountryDropdown();
+                displayNumbers(); 
+            });
         }
-
+        
         // দেশ যোগ করুন
         function addCountry() {
             const countryInput = document.getElementById('countryInput');
             const countryName = countryInput.value.trim();
             
             if (countryName) {
-                const data = loadData();
-                
-                // নতুন দেশ যোগ করুন
-                if (!data.countries.includes(countryName)) {
-                    data.countries.push(countryName);
-                    saveData(data);
-                    countryInput.value = '';
-                    displayCountries();
-                    updateCountryDropdown();
-                    alert('দেশ যোগ করা হয়েছে: ' + countryName);
+                const countryList = Object.values(appData.countries);
+                if (!countryList.includes(countryName)) {
+                    const newCountryRef = database.ref('countries').push();
+                    newCountryRef.set(countryName)
+                        .then(() => {
+                            countryInput.value = '';
+                            alert('দেশ যোগ করা হয়েছে: ' + countryName);
+                        })
+                        .catch(error => alert(error.message));
                 } else {
                     alert('এই দেশটি ইতিমধ্যেই রয়েছে!');
                 }
@@ -385,82 +406,65 @@
         }
 
         // দেশ ডিলিট করুন
-        function deleteCountry(country) {
-            if (confirm('আপনি কি "' + country + '" দেশটি ডিলিট করতে চান?')) {
-                const data = loadData();
-                
-                // দেশের তালিকা থেকে সরান
-                const index = data.countries.indexOf(country);
-                if (index !== -1) {
-                    data.countries.splice(index, 1);
-                }
-                
-                // নাম্বারগুলো থেকে দেশের এন্ট্রি ডিলিট করুন
-                if (data.numbers[country]) {
-                    delete data.numbers[country];
-                }
-                
-                saveData(data);
-                displayCountries();
-                updateCountryDropdown();
-                displayNumbers();
-                alert('দেশ ডিলিট করা হয়েছে: ' + country);
+        function deleteCountry(key, countryName) {
+            if (confirm(`আপনি কি "${countryName}" দেশটি ডিলিট করতে চান? এর সাথে যুক্ত সকল নাম্বারও ডিলিট হয়ে যাবে।`)) {
+                const updates = {};
+                updates[`/countries/${key}`] = null;
+                updates[`/numbers/${countryName}`] = null;
+
+                database.ref().update(updates)
+                    .then(() => alert('দেশ সফলভাবে ডিলিট করা হয়েছে: ' + countryName))
+                    .catch(error => alert(error.message));
             }
         }
 
         // দেশের তালিকা প্রদর্শন
         function displayCountries() {
-            const data = loadData();
             const container = document.getElementById('countryList');
             container.innerHTML = '';
             
-            if (data.countries.length === 0) {
+            if (Object.keys(appData.countries).length === 0) {
                 container.innerHTML = '<div class="message">কোন দেশ যোগ করা হয়নি</div>';
                 return;
             }
             
-            data.countries.forEach(country => {
+            for (const key in appData.countries) {
+                const countryName = appData.countries[key];
                 const countryItem = document.createElement('div');
                 countryItem.className = 'country-item';
                 
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'country-name';
-                nameSpan.textContent = country;
+                nameSpan.textContent = countryName;
                 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = 'ডিলিট';
                 deleteBtn.className = 'delete-btn';
-                deleteBtn.onclick = () => deleteCountry(country);
+                deleteBtn.onclick = () => deleteCountry(key, countryName);
                 
                 countryItem.appendChild(nameSpan);
                 countryItem.appendChild(deleteBtn);
                 container.appendChild(countryItem);
-            });
+            }
         }
 
         // দেশের ড্রপডাউন আপডেট করুন
         function updateCountryDropdown() {
-            const data = loadData();
             const select = document.getElementById('countrySelect');
-            
-            // বর্তমান নির্বাচিত দেশ সংরক্ষণ
             const selectedCountry = select.value;
             select.innerHTML = '<option value="">-- দেশ নির্বাচন করুন --</option>';
             
-            data.countries.forEach(country => {
+            const countryList = Object.values(appData.countries).sort();
+            countryList.forEach(country => {
                 const option = document.createElement('option');
                 option.value = country;
                 option.textContent = country;
                 select.appendChild(option);
             });
             
-            // পূর্বে নির্বাচিত দেশ সেট করুন
-            if (selectedCountry && data.countries.includes(selectedCountry)) {
+            if (countryList.includes(selectedCountry)) {
                 select.value = selectedCountry;
             }
-            
-            // নাম্বার তালিকা আপডেট করুন
-            displayNumbers();
         }
 
         // নাম্বার যোগ করুন
@@ -474,26 +478,20 @@
                 alert('একটি দেশ নির্বাচন করুন!');
                 return;
             }
-            
             if (!number) {
                 alert('নাম্বার লিখুন!');
                 return;
             }
             
-            const data = loadData();
-            
-            // নাম্বার অ্যারে তৈরি করুন
-            if (!data.numbers[country]) {
-                data.numbers[country] = [];
-            }
-            
-            // নতুন নাম্বার যোগ করুন
-            if (!data.numbers[country].includes(number)) {
-                data.numbers[country].push(number);
-                saveData(data);
-                numberInput.value = '';
-                displayNumbers();
-                alert('নাম্বার যোগ করা হয়েছে: ' + number);
+            const numbersForCountry = appData.numbers[country] || [];
+            if (!numbersForCountry.includes(number)) {
+                numbersForCountry.push(number);
+                database.ref('numbers/' + country).set(numbersForCountry)
+                    .then(() => {
+                        numberInput.value = '';
+                        alert('নাম্বার যোগ করা হয়েছে: ' + number);
+                    })
+                    .catch(error => alert(error.message));
             } else {
                 alert('এই নাম্বারটি ইতিমধ্যেই আছে!');
             }
@@ -522,57 +520,27 @@
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
-                    
-                    // প্রথম শীটের নাম
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
-                    
-                    // শীটকে JSON এ রূপান্তর
                     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                     
-                    // নাম্বার সংগ্রহ (প্রথম কলাম ধরে)
-                    const numbers = [];
-                    jsonData.forEach(row => {
-                        if (row.length > 0 && row[0] !== undefined) {
-                            // সংখ্যায় রূপান্তর করার চেষ্টা করি, না হলে স্ট্রিং হিসেবে নেব
-                            let num = row[0];
-                            if (typeof num === 'number') {
-                                num = num.toString();
-                            }
-                            if (num && num.trim() !== '') {
-                                numbers.push(num.trim());
-                            }
-                        }
-                    });
+                    const newNumbers = jsonData.map(row => row[0] ? String(row[0]).trim() : null).filter(Boolean);
                     
-                    if (numbers.length === 0) {
+                    if (newNumbers.length === 0) {
                         alert('কোন নাম্বার পাওয়া যায়নি!');
                         return;
                     }
                     
-                    // ডেটা লোড করুন
-                    const dataStore = loadData();
-                    
-                    // নির্বাচিত দেশের জন্য নাম্বার যোগ করুন
-                    if (!dataStore.numbers[country]) {
-                        dataStore.numbers[country] = [];
-                    }
-                    
-                    // নতুন নাম্বার যোগ করুন (ডুপ্লিকেট এড়াতে)
-                    let addedCount = 0;
-                    numbers.forEach(num => {
-                        if (!dataStore.numbers[country].includes(num)) {
-                            dataStore.numbers[country].push(num);
-                            addedCount++;
-                        }
-                    });
-                    
-                    saveData(dataStore);
-                    displayNumbers();
-                    alert(`${addedCount}টি নাম্বার সফলভাবে যোগ করা হয়েছে!`);
-                    
-                    // ফাইল ইনপুট রিসেট
-                    fileInput.value = '';
+                    const currentNumbers = appData.numbers[country] || [];
+                    const combinedNumbers = [...new Set([...currentNumbers, ...newNumbers])]; // ডুপ্লিকেট বাদ দিয়ে যুক্ত করুন
+
+                    database.ref('numbers/' + country).set(combinedNumbers)
+                        .then(() => {
+                             alert(`${combinedNumbers.length - currentNumbers.length} টি নতুন নাম্বার সফলভাবে যোগ করা হয়েছে!`);
+                             fileInput.value = '';
+                        })
+                        .catch(error => alert(error.message));
+
                 } catch (error) {
                     console.error(error);
                     alert('এক্সেল ফাইল পড়তে সমস্যা হয়েছে: ' + error.message);
@@ -587,48 +555,34 @@
         }
 
         // নাম্বার ডিলিট করুন
-        function deleteNumber(country, number) {
+        function deleteNumber(country, numberToDelete) {
             if (confirm('আপনি কি এই নাম্বারটি ডিলিট করতে চান?')) {
-                const data = loadData();
-                
-                if (data.numbers[country]) {
-                    const index = data.numbers[country].indexOf(number);
-                    if (index !== -1) {
-                        data.numbers[country].splice(index, 1);
-                        saveData(data);
-                        displayNumbers();
-                        alert('নাম্বার ডিলিট করা হয়েছে!');
-                    }
-                }
+                let numbersForCountry = appData.numbers[country] || [];
+                numbersForCountry = numbersForCountry.filter(num => num !== numberToDelete);
+
+                database.ref('numbers/' + country).set(numbersForCountry)
+                    .then(() => alert('নাম্বার ডিলিট করা হয়েছে!'))
+                    .catch(error => alert(error.message));
             }
         }
 
         // সকল নাম্বার ডিলিট করুন
         function clearNumbers() {
-            const countrySelect = document.getElementById('countrySelect');
-            const country = countrySelect.value;
-            
+            const country = document.getElementById('countrySelect').value;
             if (!country) {
                 alert('একটি দেশ নির্বাচন করুন!');
                 return;
             }
-            
-            if (confirm('আপনি কি ' + country + ' দেশের সকল নাম্বার ডিলিট করতে চান?')) {
-                const data = loadData();
-                
-                if (data.numbers[country]) {
-                    data.numbers[country] = [];
-                    saveData(data);
-                    displayNumbers();
-                    alert('সকল নাম্বার ডিলিট করা হয়েছে!');
-                }
+            if (confirm(`আপনি কি ${country} দেশের সকল নাম্বার ডিলিট করতে চান?`)) {
+                database.ref('numbers/' + country).remove()
+                    .then(() => alert('সকল নাম্বার ডিলিট করা হয়েছে!'))
+                    .catch(error => alert(error.message));
             }
         }
 
         // নাম্বার তালিকা প্রদর্শন
         function displayNumbers() {
-            const countrySelect = document.getElementById('countrySelect');
-            const country = countrySelect.value;
+            const country = document.getElementById('countrySelect').value;
             const container = document.getElementById('numbersList');
             container.innerHTML = '';
             
@@ -637,15 +591,13 @@
                 return;
             }
             
-            const data = loadData();
-            const numbers = data.numbers[country] || [];
+            const numbers = appData.numbers[country] || [];
             
             if (numbers.length === 0) {
                 container.innerHTML = '<div class="message">কোন নাম্বার নেই</div>';
                 return;
             }
             
-            // নাম্বার কাউন্টার দেখান
             const countElement = document.createElement('div');
             countElement.className = 'number-item';
             countElement.style.justifyContent = 'center';
@@ -672,29 +624,19 @@
             });
         }
 
-        // দেশ নির্বাচন পরিবর্তন হলে নাম্বার তালিকা আপডেট করুন
         document.getElementById('countrySelect').addEventListener('change', displayNumbers);
 
-        // ট্যাব ফাংশনালিটি
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', function() {
-                // সব ট্যাব থেকে active ক্লাস সরান
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                // ক্লিক করা ট্যাবে active ক্লাস যোগ করুন
                 this.classList.add('active');
                 
-                // সব ট্যাব কন্টেন্ট লুকান
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                // সংশ্লিষ্ট ট্যাব কন্টেন্ট দেখান
                 document.getElementById(`${this.dataset.tab}-panel`).classList.add('active');
             });
         });
 
-        // শুরুতে ডেটা লোড করুন
-        window.onload = function() {
-            displayCountries();
-            updateCountryDropdown();
-        };
+        window.onload = initializeData;
     </script>
 </body>
 </html>
